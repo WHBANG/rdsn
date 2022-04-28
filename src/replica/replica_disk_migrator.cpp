@@ -177,6 +177,29 @@ void replica_disk_migrator::migrate_replica(const replica_disk_migrate_request &
                     req.target_disk,
                     enum_to_string(status()));
 
+    std::string replica_dir = _replica->dir();
+    int64_t replica_dir_size = 0;
+    if (utils::filesystem::file_size(replica_dir, replica_dir_size)) {
+        derror_f("failed to get replica_dir({}) size", replica_dir);
+        reset_status();
+        return;
+    }
+
+    dsn::utils::filesystem::disk_space_info info;
+    if (!dsn::utils::filesystem::get_disk_space_info(req.target_disk, info)) {
+        derror_f("get disk space failed: target_disk = {}", req.target_disk);
+        reset_status();
+        return;
+    }
+
+    derror_replica(replica_dir_size > info.available / 1024 / 1024,
+                   "disk migration(origin={}, target={}), err = out of target disk space "
+                   "(taeget_disk_available_size({}) vs replica_dir_size({}))",
+                   req.origin_disk,
+                   req.target_disk,
+                   info.available,
+                   replica_dir_size);
+
     if (init_target_dir(req) && migrate_replica_checkpoint(req) && migrate_replica_app_info(req)) {
         _status = disk_migration_status::MOVED;
         ddebug_replica("disk migration(origin={}, target={}) copy data complete, update status "
